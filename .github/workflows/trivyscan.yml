@@ -7,10 +7,13 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
 
 permissions:
   security-events: write
   contents: read
+  issues: write  # ✅ Required for creating GitHub Issues
 
 jobs:
   trivy-scan:
@@ -35,9 +38,15 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Send Scan Results as Issue (Optional)
+      - name: Convert SARIF to Readable Report
+        run: |
+          echo "## Trivy Security Scan Report" > trivy-report.md
+          echo "" >> trivy-report.md
+          jq '.runs[0].results[] | "- **Severity**: " + .level + " - **CVE**: " + .ruleId + " - **Description**: " + .message.text' trivy-results.sarif >> trivy-report.md || echo "No vulnerabilities found" > trivy-report.md
+
+      - name: Create Issue with Trivy Scan Report
         uses: peter-evans/create-issue-from-file@v5
         with:
           title: "Trivy Security Scan Report"
-          content-filepath: 'trivy-results.sarif'
+          content-filepath: "trivy-report.md"
           labels: "security, automated scan"
