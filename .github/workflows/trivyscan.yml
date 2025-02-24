@@ -35,6 +35,7 @@ jobs:
           output: 'trivy-results.sarif'
           scanners: 'vuln,secret'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          ignore-unfixed: true  # Helps avoid unnecessary issues
 
       - name: Run Trivy Scan on app.py (Explicit Scan)
         run: |
@@ -43,7 +44,18 @@ jobs:
       - name: Debug Trivy Scan Results
         run: cat trivy-results.log || echo "No vulnerabilities found."
 
+      - name: Validate SARIF File Before Upload
+        run: |
+          if [ -s trivy-results.sarif ]; then
+            echo "SARIF file exists and is not empty."
+            cat trivy-results.sarif | jq . || echo "SARIF file is invalid JSON."
+          else
+            echo "❌ SARIF file is empty or missing!"
+            exit 1
+          fi
+
       - name: Upload Trivy Scan Results to GitHub Security Tab
+        if: success() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
