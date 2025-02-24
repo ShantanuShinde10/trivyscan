@@ -11,9 +11,9 @@ on:
     - cron: '0 0 * * *'  # Run daily
 
 permissions:
-  security-events: write  # Upload security reports
-  contents: read          # Read repo contents
-  issues: write           # Allow issue creation
+  security-events: read  # REQUIRED: Read access for Dependabot alerts
+  contents: read         # Read repo contents
+  issues: write          # Allow issue creation
 
 jobs:
   trivy-scan:
@@ -28,7 +28,7 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'json'  # Changed from SARIF to JSON for easier parsing
+          format: 'json'  # Changed for easier parsing
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
 
@@ -37,51 +37,24 @@ jobs:
         with:
           sarif_file: 'trivy-results.json'
 
-      - name: Read Trivy scan results and create issues
-        run: |
-          echo "Checking Trivy results..."
-          cat trivy-results.json | jq .  # Print output for debugging
-
-          ALERTS=$(cat trivy-results.json | jq -c '.Results[].Vulnerabilities[]?')
-
-          if [[ -z "$ALERTS" ]]; then
-            echo "No vulnerabilities found. Skipping issue creation."
-            exit 0
-          fi
-
-          echo "$ALERTS" | while read -r alert; do
-            TITLE=$(echo "$alert" | jq -r '.Title')
-            SEVERITY=$(echo "$alert" | jq -r '.Severity')
-            PACKAGE=$(echo "$alert" | jq -r '.PkgName')
-            URL=$(echo "$alert" | jq -r '.PrimaryURL')
-
-            ISSUE_BODY="### Vulnerability Found
-            - **Package:** $PACKAGE
-            - **Severity:** $SEVERITY
-            - **More Details:** [$URL]($URL)"
-
-            echo "Creating issue: $TITLE"
-            RESPONSE=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"title\":\"Security Issue: $TITLE ($SEVERITY)\", \"body\":\"$ISSUE_BODY\", \"labels\":[\"security\", \"dependabot\"]}" \
-              https://api.github.com/repos/${{ github.repository }}/issues -v)
-
-            echo "GitHub API Response: $RESPONSE"
-          done
-
   dependabot-alerts:
     name: Fetch Dependabot Alerts
     runs-on: ubuntu-latest
+    permissions:
+      security-events: read  # Ensure the job has correct permissions
+
     steps:
       - name: Get Dependabot alerts
         run: |
+          echo "Fetching Dependabot alerts..."
           DEPENDABOT_ALERTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
-          
+
           echo "Fetched Dependabot Alerts:"
           echo "$DEPENDABOT_ALERTS" | jq .
 
-          ALERT_COUNT=$(echo "$DEPENDABOT_ALERTS" | jq 'length')
+          ALERT_COUNT=$(echo "$DEPENDABOT_ALERTS" | jq 'length' || echo 0)
 
           if [ "$ALERT_COUNT" -gt 0 ]; then
             echo "Dependabot alerts found. Adding PR comments..."
