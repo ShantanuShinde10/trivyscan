@@ -24,10 +24,14 @@ jobs:
       - name: List Repository Files (Ensure app.py is present)
         run: ls -R
 
+      - name: Verify Trivy Installation
+        run: |
+          trivy -v || (echo "❌ Trivy is not installed!" && exit 1)
+
       - name: Run Trivy Scan (Full Repository)
         run: |
           trivy fs . --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
-            --format sarif --output trivy-results.sarif --no-progress || echo "Trivy scan failed!"
+            --format sarif --output trivy-results.sarif --debug --no-progress || echo "Trivy scan failed!"
 
       - name: Run Trivy Scan on app.py (Explicit)
         run: |
@@ -44,6 +48,7 @@ jobs:
             cat trivy-results.sarif | jq . || echo "SARIF file is invalid JSON."
           else
             echo "❌ SARIF file is empty or missing!"
+            ls -lah
             exit 1
           fi
 
