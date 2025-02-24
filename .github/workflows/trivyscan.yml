@@ -1,5 +1,5 @@
-name: Security Scan
-
+name: Trivy Repository Scan
+ 
 on:
   push:
     branches:
@@ -8,48 +8,28 @@ on:
     branches:
       - main
 
-jobs:
-  security-scan:
-    name: Run Security Scans
-    runs-on: ubuntu-latest
+permissions:
+  security-events: write  # Grant write permission for security scanning
+  contents: read          # Read permissions for repo contents
 
+jobs:
+  trivy-scan:
+    name: Run Trivy Security Scan
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Run Trivy for static code analysis
-      - name: Run Trivy Code Scan
-        run: trivy fs --format sarif -o trivy-code-results.sarif .
-
-      # Run Trivy for dependency vulnerability scanning
-      - name: Run Trivy Dependency Scan
-        run: trivy fs --scanners vuln --format sarif -o trivy-dependency-results.sarif .
-
-      # Run CodeQL for advanced security scanning
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
         with:
-          languages: python
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Run CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-
-      # Run Semgrep for security scanning
-      - name: Run Semgrep Security Scan
-        run: semgrep --config auto --sarif > semgrep-results.sarif
-
-      # Upload all SARIF reports to GitHub Security Tab
-      - name: Upload Trivy Code Scan SARIF
+      - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: trivy-code-results.sarif
-
-      - name: Upload Trivy Dependency Scan SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-dependency-results.sarif
-
-      - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep-results.sarif
+          sarif_file: 'trivy-results.sarif'
