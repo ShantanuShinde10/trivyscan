@@ -1,4 +1,4 @@
-name: Security Scanning
+name: Security Scan
 
 on:
   push:
@@ -8,13 +8,10 @@ on:
     branches:
       - main
 
-permissions:
-  security-events: write
-  contents: read
-
 jobs:
   security-scan:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,12 +38,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'bandit-report.sarif'
-
-      # ✅ Run CodeQL for advanced security analysis
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: 'python'
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
