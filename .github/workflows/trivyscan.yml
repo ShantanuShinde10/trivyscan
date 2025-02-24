@@ -1,4 +1,4 @@
-name: Trivy Repository Scan
+name: Trivy & Dependabot Security Scan
 
 on:
   push:
@@ -11,8 +11,8 @@ on:
     - cron: '0 0 * * *'  # Run daily
 
 permissions:
-  security-events: write  # Grant write permission for security scanning
-  contents: read          # Read permissions for repo contents
+  security-events: write  # Upload security reports
+  contents: read          # Read repo contents
   issues: write           # Allow issue creation
 
 jobs:
@@ -38,26 +38,26 @@ jobs:
           sarif_file: 'trivy-results.sarif'
 
   create-issues:
-    name: Create GitHub Issues for Vulnerabilities
+    name: Create Issues for Dependabot Alerts
     runs-on: ubuntu-latest
     needs: trivy-scan
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Dependabot Alerts
-        uses: octokit/request-action@v2.x
-        id: dependabot_alerts
-        with:
-          route: GET /repos/{owner}/{repo}/dependabot/alerts
+      - name: Fetch Dependabot Alerts
+        run: |
+          RESPONSE=$(curl -s -H "Accept: application/vnd.github+json" \
+                          -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+                          "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
+          echo "$RESPONSE" > alerts.json
+          echo "alerts=$(jq -c '.' alerts.json)" >> $GITHUB_ENV
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
 
       - name: Create Issues for Dependabot Alerts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo '${{ steps.dependabot_alerts.outputs.data }}' | jq -c '.[]' | while read -r alert; do
+          cat alerts.json | jq -c '.[]' | while read -r alert; do
             title=$(echo "$alert" | jq -r '.security_advisory.summary')
             url=$(echo "$alert" | jq -r '.html_url')
             package=$(echo "$alert" | jq -r '.dependency.package.name')
@@ -70,3 +70,5 @@ jobs:
 
             gh issue create --title "Security Issue: $title ($severity)" --body "$issue_body" --label "security, dependabot"
           done
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
