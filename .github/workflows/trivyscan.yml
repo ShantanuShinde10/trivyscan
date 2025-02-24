@@ -9,8 +9,8 @@ on:
       - main
 
 permissions:
-  security-events: write  # Required to upload SARIF results
-  contents: read          # Allows access to repository contents
+  security-events: write  # Grant write permission for security scanning
+  contents: read          # Read permissions for repo contents
 
 jobs:
   trivy-scan:
@@ -20,23 +20,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache Trivy binary
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.local/bin/trivy-bin
-          key: trivy-binary-v0.57.1-Linux-X64
-          restore-keys: |
-            trivy-binary-
-
-      - name: Install Trivy (if not cached)
-        run: |
-          if [ ! -f "/home/runner/.local/bin/trivy-bin" ]; then
-            curl -sfL https://github.com/aquasecurity/trivy/releases/download/v0.57.1/trivy-linux-amd64 -o /home/runner/.local/bin/trivy-bin
-            chmod +x /home/runner/.local/bin/trivy-bin
-          fi
-
       - name: Run Trivy vulnerability scanner
-        run: /home/runner/.local/bin/trivy-bin fs . --format sarif --output trivy-results.sarif --severity CRITICAL,HIGH
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
