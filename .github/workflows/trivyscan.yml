@@ -28,57 +28,81 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          format: 'json'  # Changed from SARIF to JSON for easier parsing
+          output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
-
-  dependabot-pr:
-    name: Dependabot Alerts in PRs
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Fetch Dependabot Alerts
-        run: |
-          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts" > dependabot-alerts.json
-
-      - name: Check for Open Dependabot Alerts
-        run: |
-          ALERT_COUNT=$(jq 'length' dependabot-alerts.json)
-          if [ "$ALERT_COUNT" -gt 0 ]; then
-            echo "Dependabot alerts found."
-          else
-            echo "No open Dependabot alerts."
-          fi
-
-  create-issues:
-    name: Create Issues for Vulnerabilities
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          sarif_file: 'trivy-results.json'
 
       - name: Read Trivy scan results and create issues
         run: |
-          ALERTS=$(cat trivy-results.sarif | jq -c '.runs[].results[]')
-          
-          echo "$ALERTS" | while read -r alert; do
-            TITLE=$(echo "$alert" | jq -r '.message')
-            SEVERITY=$(echo "$alert" | jq -r '.level')
-            URL="https://github.com/${{ github.repository }}/security"
+          echo "Checking Trivy results..."
+          cat trivy-results.json | jq .  # Print output for debugging
 
-            ISSUE_BODY="### Vulnerability: $TITLE
+          ALERTS=$(cat trivy-results.json | jq -c '.Results[].Vulnerabilities[]?')
+
+          if [[ -z "$ALERTS" ]]; then
+            echo "No vulnerabilities found. Skipping issue creation."
+            exit 0
+          fi
+
+          echo "$ALERTS" | while read -r alert; do
+            TITLE=$(echo "$alert" | jq -r '.Title')
+            SEVERITY=$(echo "$alert" | jq -r '.Severity')
+            PACKAGE=$(echo "$alert" | jq -r '.PkgName')
+            URL=$(echo "$alert" | jq -r '.PrimaryURL')
+
+            ISSUE_BODY="### Vulnerability Found
+            - **Package:** $PACKAGE
             - **Severity:** $SEVERITY
             - **More Details:** [$URL]($URL)"
 
-            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            echo "Creating issue: $TITLE"
+            RESPONSE=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
               -d "{\"title\":\"Security Issue: $TITLE ($SEVERITY)\", \"body\":\"$ISSUE_BODY\", \"labels\":[\"security\", \"dependabot\"]}" \
-              https://api.github.com/repos/${{ github.repository }}/issues
+              https://api.github.com/repos/${{ github.repository }}/issues -v)
+
+            echo "GitHub API Response: $RESPONSE"
           done
+
+  dependabot-alerts:
+    name: Fetch Dependabot Alerts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Dependabot alerts
+        run: |
+          DEPENDABOT_ALERTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
+          
+          echo "Fetched Dependabot Alerts:"
+          echo "$DEPENDABOT_ALERTS" | jq .
+
+          ALERT_COUNT=$(echo "$DEPENDABOT_ALERTS" | jq 'length')
+
+          if [ "$ALERT_COUNT" -gt 0 ]; then
+            echo "Dependabot alerts found. Adding PR comments..."
+
+            echo "$DEPENDABOT_ALERTS" | jq -c '.[]' | while read -r alert; do
+              TITLE=$(echo "$alert" | jq -r '.security_advisory.summary')
+              PACKAGE=$(echo "$alert" | jq -r '.dependency.package.name')
+              SEVERITY=$(echo "$alert" | jq -r '.security_vulnerability.severity')
+              ALERT_URL=$(echo "$alert" | jq -r '.html_url')
+
+              COMMENT_BODY="### Dependabot Security Alert  
+              - **Package:** $PACKAGE  
+              - **Severity:** $SEVERITY  
+              - **More Details:** [$ALERT_URL]($ALERT_URL)"
+
+              # Add comment to the PR
+              curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                -d "{\"body\":\"$COMMENT_BODY\"}" \
+                "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
+            done
+          else
+            echo "No Dependabot alerts found."
+          fi
