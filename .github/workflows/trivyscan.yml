@@ -24,11 +24,14 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Linux-64bit.tar.gz
+          sudo apt-get install -y wget jq
+          wget -q https://github.com/aquasecurity/trivy/releases/latest/download/trivy_Linux-64bit.tar.gz
           tar zxvf trivy_Linux-64bit.tar.gz
           sudo mv trivy /usr/local/bin/
           trivy -v || (echo "❌ Trivy installation failed!" && exit 1)
+
+      - name: Debug Trivy Installation
+        run: which trivy && trivy -v
 
       - name: List Repository Files (Ensure app.py is present)
         run: ls -R
@@ -38,14 +41,6 @@ jobs:
           trivy fs . --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
             --format sarif --output trivy-results.sarif --no-progress || echo "Trivy scan failed!"
 
-      - name: Run Trivy Scan on app.py (Explicit)
-        run: |
-          trivy fs app.py --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
-            --format table | tee trivy-results.log || echo "No vulnerabilities found."
-
-      - name: Debug Trivy Scan Results
-        run: cat trivy-results.log || echo "No vulnerabilities found."
-
       - name: Validate SARIF File Before Upload
         run: |
           if [ -s trivy-results.sarif ]; then
@@ -53,7 +48,6 @@ jobs:
             cat trivy-results.sarif | jq . || echo "SARIF file is invalid JSON."
           else
             echo "❌ SARIF file is empty or missing!"
-            ls -lah
             exit 1
           fi
 
