@@ -1,4 +1,4 @@
-name: Trivy & Dependabot Security Scan
+name: Trivy & Security Alerts with Issue Creation
 
 on:
   push:
@@ -11,13 +11,13 @@ on:
     - cron: '0 0 * * *'  # Runs daily
 
 permissions:
-  security-events: write  # Required for uploading SARIF reports
-  contents: read          # Required for scanning repository contents
-  issues: write           # Required if issue creation is needed
+  security-events: write  # Upload SARIF reports
+  contents: read          # Scan repo contents
+  issues: write           # Create GitHub issues
 
 jobs:
   security-scan:
-    name: Run Security Scans (Trivy & Dependabot)
+    name: Run Security Scans & Create Issues
     runs-on: ubuntu-latest
 
     steps:
@@ -38,6 +38,57 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-      - name: Enable Dependabot Alerts in PR
+      # 🔹 Create Issues for Code Scanning Alerts
+      - name: Create Issues for Code Scanning Alerts
         run: |
-          echo "Dependabot alerts should now be visible in the security tab of PRs."
+          ALERTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/code-scanning/alerts")
+
+          echo "Fetched Code Scanning Alerts:"
+          echo "$ALERTS" | jq .
+
+          echo "$ALERTS" | jq -c '.[]' | while read -r alert; do
+            RULE_NAME=$(echo "$alert" | jq -r '.rule.name')
+            ALERT_URL=$(echo "$alert" | jq -r '.html_url')
+
+            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -d "{\"title\":\"Fix code scanning alert - $RULE_NAME\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"security\"]}" \
+              https://api.github.com/repos/${{ github.repository }}/issues
+          done
+
+      # 🔹 Create Issues for Secret Scanning Alerts
+      - name: Create Issues for Secret Scanning Alerts
+        run: |
+          SECRETS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/secret-scanning/alerts")
+
+          echo "Fetched Secret Scanning Alerts:"
+          echo "$SECRETS" | jq .
+
+          echo "$SECRETS" | jq -c '.[]' | while read -r alert; do
+            SECRET_TYPE=$(echo "$alert" | jq -r '.secret_type')
+            ALERT_URL=$(echo "$alert" | jq -r '.html_url')
+
+            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -d "{\"title\":\"Leaked Secret Detected - $SECRET_TYPE\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"security\"]}" \
+              https://api.github.com/repos/${{ github.repository }}/issues
+          done
+
+      # 🔹 Create Issues for Dependabot Alerts
+      - name: Create Issues for Dependabot Alerts
+        run: |
+          DEPENDABOT_ALERTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
+
+          echo "Fetched Dependabot Alerts:"
+          echo "$DEPENDABOT_ALERTS" | jq .
+
+          echo "$DEPENDABOT_ALERTS" | jq -c '.[]' | while read -r alert; do
+            PACKAGE_NAME=$(echo "$alert" | jq -r '.dependency.package.name')
+            SEVERITY=$(echo "$alert" | jq -r '.security_vulnerability.severity')
+            ALERT_URL=$(echo "$alert" | jq -r '.html_url')
+
+            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -d "{\"title\":\"Dependency Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"dependabot\"]}" \
+              https://api.github.com/repos/${{ github.repository }}/issues
+          done
