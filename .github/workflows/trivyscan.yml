@@ -46,15 +46,19 @@ jobs:
           output: 'trivy-code-scan.txt'
           severity: 'CRITICAL,HIGH'
 
-      # ✅ Run Bandit (Python Security Linter) for Static Code Analysis
-      - name: Run Bandit security scan
-        uses: tonybaloney/pybandit-action@v1.7.5
+      # ✅ Install Bandit manually
+      - name: Install Bandit
+        run: pip install bandit
+
+      # ✅ Run Bandit security scan (Python static analysis)
+      - name: Run Bandit
+        run: bandit -r . -ll -o bandit-report.json -f json
+
+      # ✅ Upload Bandit results to GitHub Security tab
+      - name: Upload Bandit results
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          path: '.'
-          level: 'high'
-          confidence: 'high'
-          output_format: 'json'
-          output_file: 'bandit-report.json'
+          sarif_file: 'bandit-report.json'
 
       # ✅ Run CodeQL for advanced security analysis
       - name: Initialize CodeQL
@@ -64,9 +68,3 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-
-      # ✅ Upload Bandit results to GitHub Security tab (if needed)
-      - name: Upload Bandit results
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'bandit-report.json'
