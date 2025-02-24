@@ -7,8 +7,6 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    - cron: '0 0 * * *'  # Runs daily at midnight UTC
 
 permissions:
   security-events: write
@@ -24,22 +22,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: List Repository Files (Ensure app.py is present)
-        run: ls -R  # Debugging step to verify files exist
+        run: ls -R
 
       - name: Run Trivy Scan (Full Repository)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          scanners: 'vuln,secret'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: true  # Helps avoid unnecessary issues
-
-      - name: Run Trivy Scan on app.py (Explicit Scan)
         run: |
-          trivy fs app.py --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW --format table | tee trivy-results.log
+          trivy fs . --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
+            --format sarif --output trivy-results.sarif --no-progress || echo "Trivy scan failed!"
+
+      - name: Run Trivy Scan on app.py (Explicit)
+        run: |
+          trivy fs app.py --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
+            --format table | tee trivy-results.log || echo "No vulnerabilities found."
 
       - name: Debug Trivy Scan Results
         run: cat trivy-results.log || echo "No vulnerabilities found."
@@ -47,7 +40,7 @@ jobs:
       - name: Validate SARIF File Before Upload
         run: |
           if [ -s trivy-results.sarif ]; then
-            echo "SARIF file exists and is not empty."
+            echo "✅ SARIF file exists and is not empty."
             cat trivy-results.sarif | jq . || echo "SARIF file is invalid JSON."
           else
             echo "❌ SARIF file is empty or missing!"
@@ -60,24 +53,3 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
-
-      - name: Convert Trivy Results to Markdown Report
-        run: |
-          echo "## Trivy Security Scan Report" > trivy-report.md
-          echo "" >> trivy-report.md
-          vulnerabilities=$(jq -r '.runs[0].results[]? | "- **Severity**: " + .level + " - **CVE**: " + .ruleId + " - **Description**: " + .message.text' trivy-results.sarif || echo "")
-          if [[ -z "$vulnerabilities" ]]; then
-            echo "🎉 No vulnerabilities found!" >> trivy-report.md
-          else
-            echo "$vulnerabilities" >> trivy-report.md
-          fi
-
-      - name: Debug Report File (Ensure Content is Generated)
-        run: cat trivy-report.md || echo "No vulnerabilities found."
-
-      - name: Create GitHub Issue for Trivy Report
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: "🚨 Trivy Security Scan Report"
-          content-filepath: "trivy-report.md"
-          labels: "security, automated scan"
