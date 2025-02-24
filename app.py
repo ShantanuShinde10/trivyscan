@@ -2,19 +2,18 @@ import os
 import subprocess
 import hashlib
 
-filename = input("Enter a filename to read: ")
-with open(filename, 'r') as file:
-    data = file.read()
+# Hardcoded secret
+API_KEY = "1234567890abcdef"
 
-password = 'secretpassword'
+# Insecure file permissions
+filename = "sensitive_data.txt"
+os.chmod(filename, 0o777)
 
-command = input("Enter a shell command to execute: ")
-subprocess.run(command, shell=True)
+# Command injection vulnerability
+user_input = input("Enter a command: ")
+subprocess.run(user_input, shell=True)  # Dangerous usage
 
+# Use of weak cryptographic function (MD5)
+password = "mypassword"
 hashed_password = hashlib.md5(password.encode()).hexdigest()
-
-os.system('echo "This is a vulnerable file" > vulnerable_file.txt')
-
-username = input("Enter your username: ")
-if username == 'admin':
-    print("Welcome, admin!")
+print("Hashed password:", hashed_password)
