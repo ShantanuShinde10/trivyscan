@@ -35,11 +35,11 @@ jobs:
         with:
           sarif_file: 'trivy-dependency-results.sarif'
 
-      # ✅ Install Bandit
+      # ✅ Install Bandit & bandit2sarif
       - name: Install Bandit & SARIF converter
         run: |
           pip install bandit
-          pip install sarif-tools
+          pip install bandit2sarif
 
       # ✅ Run Bandit and generate JSON report
       - name: Run Bandit security scan
@@ -49,7 +49,7 @@ jobs:
       # ✅ Convert Bandit JSON to SARIF format
       - name: Convert Bandit JSON to SARIF
         run: |
-          sarif-tools convert bandit-report.json --output bandit-report.sarif
+          bandit2sarif -i bandit-report.json -o bandit-report.sarif
 
       # ✅ Upload Bandit SARIF results
       - name: Upload Bandit results to GitHub Security
