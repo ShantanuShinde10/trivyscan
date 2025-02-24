@@ -36,4 +36,49 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-    
+
+  dependabot-pr:
+    name: Dependabot Alerts in PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fetch Dependabot Alerts
+        run: |
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts" > dependabot-alerts.json
+
+      - name: Check for Open Dependabot Alerts
+        run: |
+          ALERT_COUNT=$(jq 'length' dependabot-alerts.json)
+          if [ "$ALERT_COUNT" -gt 0 ]; then
+            echo "Dependabot alerts found."
+          else
+            echo "No open Dependabot alerts."
+          fi
+
+  create-issues:
+    name: Create Issues for Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read Trivy scan results and create issues
+        run: |
+          ALERTS=$(cat trivy-results.sarif | jq -c '.runs[].results[]')
+          
+          echo "$ALERTS" | while read -r alert; do
+            TITLE=$(echo "$alert" | jq -r '.message')
+            SEVERITY=$(echo "$alert" | jq -r '.level')
+            URL="https://github.com/${{ github.repository }}/security"
+
+            ISSUE_BODY="### Vulnerability: $TITLE
+            - **Severity:** $SEVERITY
+            - **More Details:** [$URL]($URL)"
+
+            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -d "{\"title\":\"Security Issue: $TITLE ($SEVERITY)\", \"body\":\"$ISSUE_BODY\", \"labels\":[\"security\", \"dependabot\"]}" \
+              https://api.github.com/repos/${{ github.repository }}/issues
+          done
