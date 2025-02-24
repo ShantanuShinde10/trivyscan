@@ -1,4 +1,4 @@
-name: Trivy Security Scan
+name: Security Scanning
 
 on:
   push:
@@ -9,52 +9,64 @@ on:
       - main
 
 permissions:
-  security-events: write
-  contents: read
-  issues: write
+  security-events: write  # Grant permission to upload security results
+  contents: read          # Read repository contents
 
 jobs:
-  trivy-scan:
-    name: Run Trivy Security Scan
+  security-scan:
+    name: Run Security Scans
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Trivy (Official APT Method)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget curl jq
-          curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo tee /etc/apt/trusted.gpg.d/trivy.asc
-          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
-          trivy -v || (echo "❌ Trivy installation failed!" && exit 1)
+      # ✅ Run Trivy vulnerability scan for dependencies
+      - name: Run Trivy dependency scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-dependency-results.sarif'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Debug Trivy Installation
-        run: which trivy && trivy -v
-
-      - name: List Repository Files (Ensure app.py is present)
-        run: ls -R
-
-      - name: Run Trivy Scan (Full Repository)
-        run: |
-          trivy fs . --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW \
-            --format sarif --output trivy-results.sarif --no-progress || echo "Trivy scan failed!"
-
-      - name: Validate SARIF File Before Upload
-        run: |
-          if [ -s trivy-results.sarif ]; then
-            echo "✅ SARIF file exists and is not empty."
-            cat trivy-results.sarif | jq . || echo "SARIF file is invalid JSON."
-          else
-            echo "❌ SARIF file is empty or missing!"
-            exit 1
-          fi
-
-      - name: Upload Trivy Scan Results to GitHub Security Tab
-        if: success() && hashFiles('trivy-results.sarif') != ''
+      # ✅ Upload Trivy results to GitHub Security tab
+      - name: Upload Trivy dependency results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
-          wait-for-processing: true
+          sarif_file: 'trivy-dependency-results.sarif'
+
+      # ✅ Run Trivy in "repo" mode for code analysis (Detects insecure coding practices)
+      - name: Run Trivy code scanning
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'repo'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-code-scan.txt'
+          severity: 'CRITICAL,HIGH'
+
+      # ✅ Run Bandit (Python Security Linter) for Static Code Analysis
+      - name: Run Bandit security scan
+        uses: tonybaloney/pybandit-action@v1.7.5
+        with:
+          path: '.'
+          level: 'high'
+          confidence: 'high'
+          output_format: 'json'
+          output_file: 'bandit-report.json'
+
+      # ✅ Run CodeQL for advanced security analysis
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: 'python'
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+      # ✅ Upload Bandit results to GitHub Security tab (if needed)
+      - name: Upload Bandit results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'bandit-report.json'
