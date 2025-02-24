@@ -10,31 +10,46 @@ on:
 
 jobs:
   security-scan:
+    name: Run Security Scans
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ✅ Install Bandit
-      - name: Install Bandit
-        run: pip install bandit
+      # Run Trivy for static code analysis
+      - name: Run Trivy Code Scan
+        run: trivy fs --format sarif -o trivy-code-results.sarif .
 
-      # ✅ Run Bandit and generate JSON report
-      - name: Run Bandit security scan
-        run: |
-          bandit -r . -ll -f json -o bandit-report.json || true
+      # Run Trivy for dependency vulnerability scanning
+      - name: Run Trivy Dependency Scan
+        run: trivy fs --scanners vuln --format sarif -o trivy-dependency-results.sarif .
 
-      # ✅ Install sarif-tools via npm
-      - name: Install sarif-tools
-        run: npm install -g sarif-tools
+      # Run CodeQL for advanced security scanning
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
 
-      # ✅ Convert Bandit JSON to SARIF format using sarif-tools
-      - name: Convert Bandit JSON to SARIF
-        run: sarif-tools convert bandit-report.json --output bandit-report.sarif
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
 
-      # ✅ Upload Bandit SARIF results
-      - name: Upload Bandit results to GitHub Security
+      # Run Semgrep for security scanning
+      - name: Run Semgrep Security Scan
+        run: semgrep --config auto --sarif > semgrep-results.sarif
+
+      # Upload all SARIF reports to GitHub Security Tab
+      - name: Upload Trivy Code Scan SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'bandit-report.sarif'
+          sarif_file: trivy-code-results.sarif
+
+      - name: Upload Trivy Dependency Scan SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-dependency-results.sarif
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
