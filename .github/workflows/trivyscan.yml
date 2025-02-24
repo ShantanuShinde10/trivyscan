@@ -36,39 +36,52 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-
   create-issues:
-    name: Create Issues for Dependabot Alerts
+    name: Create Issues for Security Alerts
     runs-on: ubuntu-latest
-    needs: trivy-scan
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Fetch Dependabot Alerts
         run: |
-          RESPONSE=$(curl -s -H "Accept: application/vnd.github+json" \
-                          -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-                          "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
-          echo "$RESPONSE" > alerts.json
-          echo "alerts=$(jq -c '.' alerts.json)" >> $GITHUB_ENV
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                           "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
+          echo "$RESPONSE" > dependabot_alerts.json
+          echo "alerts=$(jq -c '.' dependabot_alerts.json)" >> $GITHUB_ENV
 
       - name: Create Issues for Dependabot Alerts
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}  # GitHub CLI requires GH_TOKEN, not GH_PAT
         run: |
-          cat alerts.json | jq -c '.[]' | while read -r alert; do
+          cat dependabot_alerts.json | jq -c '.[]' | while read -r alert; do
             title=$(echo "$alert" | jq -r '.security_advisory.summary')
             url=$(echo "$alert" | jq -r '.html_url')
             package=$(echo "$alert" | jq -r '.dependency.package.name')
             severity=$(echo "$alert" | jq -r '.security_vulnerability.severity')
 
-            issue_body="### Vulnerability: $title
-            - **Package:** $package
-            - **Severity:** $severity
-            - **More Details:** [$url]($url)"
+            issue_body="### Dependabot Security Alert\n- **Package:** $package\n- **Severity:** $severity\n- **More Details:** [$url]($url)"
 
-            gh issue create --title "Security Issue: $title ($severity)" --body "$issue_body" --label "security, dependabot"
+            gh issue create --title "Security Issue: $title ($severity)" --body "$issue_body" --label "security"
           done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch Code Scanning Alerts
+        run: |
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                           "https://api.github.com/repos/${{ github.repository }}/code-scanning/alerts")
+          echo "$RESPONSE" > code_scanning_alerts.json
+          echo "alerts=$(jq -c '.' code_scanning_alerts.json)" >> $GITHUB_ENV
+
+      - name: Create Issues for Code Scanning Alerts
+        run: |
+          cat code_scanning_alerts.json | jq -c '.[]' | while read -r alert; do
+            rule_name=$(echo "$alert" | jq -r '.rule.name')
+            alert_url=$(echo "$alert" | jq -r '.html_url')
+
+            issue_title="Fix Code Scanning Alert - $rule_name"
+            issue_body="### Code Scanning Alert\n- **Rule:** $rule_name\n- **Details:** [$alert_url]($alert_url)"
+
+            gh issue create --title "$issue_title" --body "$issue_body" --label "security"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
