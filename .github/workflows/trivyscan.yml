@@ -1,4 +1,4 @@
-name: Trivy Repository Scan
+name: Trivy Security Scan
 
 on:
   push:
@@ -9,27 +9,35 @@ on:
       - main
 
 permissions:
-  security-events: write  # Grant write permission for security scanning
-  contents: read          # Read permissions for repo contents
+  security-events: write
+  contents: read
 
 jobs:
   trivy-scan:
     name: Run Trivy Security Scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy Vulnerability & Secret Scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          scanners: 'vuln,secret'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
 
-      - name: Upload Trivy scan results to GitHub Security tab
+      - name: Upload Trivy Results to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+
+      - name: Send Scan Results as Issue (Optional)
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Trivy Security Scan Report"
+          content-filepath: 'trivy-results.sarif'
+          labels: "security, automated scan"
