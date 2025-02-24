@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+permissions:
+  security-events: write  # Grant write permission for security scanning
+  contents: read          # Read permissions for repo contents
+
 jobs:
   trivy-scan:
     name: Run Trivy Security Scan
