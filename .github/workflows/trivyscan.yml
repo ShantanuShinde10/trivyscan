@@ -13,7 +13,7 @@ on:
 permissions:
   security-events: write
   contents: read
-  issues: write  # ✅ Required for creating GitHub Issues
+  issues: write
 
 jobs:
   trivy-scan:
@@ -23,7 +23,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Trivy Vulnerability & Secret Scan
+      - name: List Repository Files (Ensure app.py is present)
+        run: ls -R  # Debugging step to verify files exist
+
+      - name: Run Trivy Scan (Full Repository)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
@@ -33,20 +36,36 @@ jobs:
           scanners: 'vuln,secret'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
 
-      - name: Upload Trivy Results to GitHub Security Tab
+      - name: Run Trivy Scan on app.py (Explicit Scan)
+        run: |
+          trivy fs app.py --scanners vuln,secret --severity CRITICAL,HIGH,MEDIUM,LOW --format table | tee trivy-results.log
+
+      - name: Debug Trivy Scan Results
+        run: cat trivy-results.log || echo "No vulnerabilities found."
+
+      - name: Upload Trivy Scan Results to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+          wait-for-processing: true
 
-      - name: Convert SARIF to Readable Report
+      - name: Convert Trivy Results to Markdown Report
         run: |
           echo "## Trivy Security Scan Report" > trivy-report.md
           echo "" >> trivy-report.md
-          jq '.runs[0].results[] | "- **Severity**: " + .level + " - **CVE**: " + .ruleId + " - **Description**: " + .message.text' trivy-results.sarif >> trivy-report.md || echo "No vulnerabilities found" > trivy-report.md
+          vulnerabilities=$(jq -r '.runs[0].results[]? | "- **Severity**: " + .level + " - **CVE**: " + .ruleId + " - **Description**: " + .message.text' trivy-results.sarif || echo "")
+          if [[ -z "$vulnerabilities" ]]; then
+            echo "🎉 No vulnerabilities found!" >> trivy-report.md
+          else
+            echo "$vulnerabilities" >> trivy-report.md
+          fi
 
-      - name: Create Issue with Trivy Scan Report
+      - name: Debug Report File (Ensure Content is Generated)
+        run: cat trivy-report.md || echo "No vulnerabilities found."
+
+      - name: Create GitHub Issue for Trivy Report
         uses: peter-evans/create-issue-from-file@v5
         with:
-          title: "Trivy Security Scan Report"
+          title: "🚨 Trivy Security Scan Report"
           content-filepath: "trivy-report.md"
           labels: "security, automated scan"
