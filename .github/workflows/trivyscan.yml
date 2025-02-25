@@ -53,9 +53,14 @@ jobs:
             SEVERITY=$(echo "$alert" | jq -r '.security_vulnerability.severity')
             ALERT_URL=$(echo "$alert" | jq -r '.html_url')
 
-            curl -X POST -H "Authorization: token ${{ secrets.GH_PAT }}" \
-              -d "{\"title\":\"Dependency Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"dependabot\"]}" \
-              https://api.github.com/repos/${{ github.repository }}/issues
+            # Ensure variables are not empty
+            if [[ -n "$PACKAGE_NAME" && -n "$SEVERITY" && -n "$ALERT_URL" ]]; then
+              curl -X POST -H "Authorization: token ${{ secrets.GH_PAT }}" \
+                -d "{\"title\":\"Dependency Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"dependabot\"]}" \
+                "https://api.github.com/repos/${{ github.repository }}/issues"
+            else
+              echo "Skipping empty alert entry."
+            fi
           done
 
             curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
