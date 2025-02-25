@@ -42,28 +42,27 @@ jobs:
       # 🔹 Create Issues for Dependabot Alerts
       - name: Fetch Dependabot Alerts & Create Issues
         run: |
+          # Fetch Dependabot alerts from GitHub API
           DEPENDABOT_ALERTS=$(curl -s -H "Authorization: token ${{ secrets.GH_PAT }}" \
             "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts")
 
           echo "Fetched Dependabot Alerts:"
           echo "$DEPENDABOT_ALERTS" | jq .
 
-          echo "$DEPENDABOT_ALERTS" | jq -c '.[]' | while read -r alert; do
+          # Loop through alerts and create GitHub issues
+          echo "$DEPENDABOT_ALERTS" | jq -c '.[]' | while IFS= read -r alert; do
             PACKAGE_NAME=$(echo "$alert" | jq -r '.dependency.package.name')
             SEVERITY=$(echo "$alert" | jq -r '.security_vulnerability.severity')
             ALERT_URL=$(echo "$alert" | jq -r '.html_url')
 
-            # Ensure variables are not empty
+            # Ensure values are not empty before creating an issue
             if [[ -n "$PACKAGE_NAME" && -n "$SEVERITY" && -n "$ALERT_URL" ]]; then
+              echo "Creating GitHub Issue for $PACKAGE_NAME..."
               curl -X POST -H "Authorization: token ${{ secrets.GH_PAT }}" \
-                -d "{\"title\":\"Dependency Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"dependabot\"]}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                -d "{\"title\":\"[Dependabot] Security Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"security\", \"dependabot\"]}" \
                 "https://api.github.com/repos/${{ github.repository }}/issues"
             else
-              echo "Skipping empty alert entry."
+              echo "Skipping issue creation due to missing data."
             fi
-          done
-
-            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -d "{\"title\":\"Dependency Issue: $PACKAGE_NAME ($SEVERITY)\", \"body\":\"[View Alert]($ALERT_URL)\", \"labels\":[\"dependabot\"]}" \
-              https://api.github.com/repos/${{ github.repository }}/issues
           done
